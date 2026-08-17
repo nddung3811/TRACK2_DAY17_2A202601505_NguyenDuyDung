@@ -31,7 +31,9 @@
   silver_tickets.priority ∈ 1..4, không NULL  ✓ sạch
   quarantine_tickets đúng số bản ghi lỗi      ✓ 312 / 312
   gold_training_set: 1 hàng / 1 ticket        ✓ không lặp
-  bài mở rộng (EXTRA.md)                      — chưa chạy `make seed-extra`
+  dashboard rows scanned                      ✓ 5,000,000 → 9,324 (536,3×)
+    số file parquet                           ✓ 5,000 → 14
+    kết quả truy vấn không đổi                ✓
   DAG: catchup / max_active_runs              ✓ False / 1
 
   TỔNG KẾT
@@ -97,10 +99,10 @@ Nên giữ Bronze là dữ liệu thô để truy vết/audit, rồi chuẩn ho�
 
 | | |
 |---|---|
-| **Bài đã làm** | A — Query dashboard chậm |
-| **Nguyên nhân** | 5.000 Parquet file nhỏ không partition khiến truy vấn mở toàn bộ file; điều kiện `strftime(event_time, ...)` không sargable nên không thể tận dụng partition/statistics. |
-| **Cách khắc phục** | Compact theo partition `event_date`, sắp xếp `customer_name, event_time`, row group 1.000; truy vấn đọc dataset mới bằng `hive_partitioning` và filter ngày theo range/date. |
-| **Bằng chứng** | rows scanned: 5.000.000 → 9.324 (**536,3×**) · file: 5.000 → 14 · rows on disk: 130.683 không đổi · result hash: `4379e4c5d9f3` không đổi. |
+| **Bài đã làm** | A — Query dashboard chậm; B — consumer gặp sự cố giữa batch |
+| **Nguyên nhân** | **A:** 5.000 Parquet file nhỏ không partition khiến truy vấn mở toàn bộ file; điều kiện `strftime(event_time, ...)` không sargable nên không thể tận dụng partition/statistics. **B:** consumer commit offset trước khi ghi; chết sau commit làm batch chưa ghi bị bỏ qua khi restart (at-most-once). |
+| **Cách khắc phục** | **A:** compact theo partition `event_date`, sắp xếp `customer_name, event_time`, row group 1.000; đọc bằng `hive_partitioning` và filter ngày theo range/date. **B:** ghi batch trước, commit offset sau; dùng `event_id` primary key và `ON CONFLICT DO UPDATE` để replay cập nhật nội dung mới, thay vì `DO NOTHING` bỏ qua nội dung đã thay đổi. |
+| **Bằng chứng** | **A:** rows scanned 5.000.000 → 9.324 (**536,3×**) · file 5.000 → 14 · hash `4379e4c5d9f3` không đổi. **B:** baseline 20.000 event · crash lô 7, offset 3.000 · restart ghi 17.000 message · cuối cùng 20.000 hàng / 20.000 event_id; không mất, không trùng, C == A ✓. |
 
 ---
 
